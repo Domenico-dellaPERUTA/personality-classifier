@@ -1,115 +1,134 @@
-// frontend/src/App.js
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import './App.css';
+// frontend/src/App.tsx
+import { useState, useEffect } from 'react'
+import type { FormEvent, ChangeEvent } from 'react'
+import axios, { AxiosError } from 'axios'
+import './App.css'
+import type { Contact, PersonalityType, ContactFormData, Statistics } from './types'
 
-const API_URL = 'http://localhost:3001/api';
+const API_URL = '/api' // Usa il proxy di Vite
+
+interface ErrorResponse {
+  error: string
+}
 
 function App() {
-  const [contacts, setContacts] = useState([]);
-  const [personalityTypes, setPersonalityTypes] = useState([]);
-  const [stats, setStats] = useState({ total: 0, byType: [] });
-  const [showForm, setShowForm] = useState(false);
-  const [editingContact, setEditingContact] = useState(null);
-  const [formData, setFormData] = useState({
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [personalityTypes, setPersonalityTypes] = useState<PersonalityType[]>([])
+  const [stats, setStats] = useState<Statistics>({ total: 0, byType: [] })
+  const [showForm, setShowForm] = useState<boolean>(false)
+  const [editingContact, setEditingContact] = useState<Contact | null>(null)
+  const [formData, setFormData] = useState<ContactFormData>({
     name: '',
     surname: '',
     relationship: '',
     personality_type_id: '',
     notes: ''
-  });
-  const [filter, setFilter] = useState('');
+  })
+  const [filter, setFilter] = useState<string>('')
 
   useEffect(() => {
-    fetchContacts();
-    fetchPersonalityTypes();
-    fetchStats();
-  }, []);
+    fetchContacts()
+    fetchPersonalityTypes()
+    fetchStats()
+  }, [])
 
-  const fetchContacts = async () => {
+  const fetchContacts = async (): Promise<void> => {
     try {
-      const response = await axios.get(`${API_URL}/contacts`);
-      setContacts(response.data);
+      const response = await axios.get<Contact[]>(`${API_URL}/contacts`)
+      setContacts(response.data)
     } catch (error) {
-      console.error('Error fetching contacts:', error);
+      console.error('Error fetching contacts:', error)
     }
-  };
+  }
 
-  const fetchPersonalityTypes = async () => {
+  const fetchPersonalityTypes = async (): Promise<void> => {
     try {
-      const response = await axios.get(`${API_URL}/personality-types`);
-      setPersonalityTypes(response.data);
+      const response = await axios.get<PersonalityType[]>(`${API_URL}/personality-types`)
+      setPersonalityTypes(response.data)
     } catch (error) {
-      console.error('Error fetching personality types:', error);
+      console.error('Error fetching personality types:', error)
     }
-  };
+  }
 
-  const fetchStats = async () => {
+  const fetchStats = async (): Promise<void> => {
     try {
-      const response = await axios.get(`${API_URL}/stats`);
-      setStats(response.data);
+      const response = await axios.get<Statistics>(`${API_URL}/stats`)
+      setStats(response.data)
     } catch (error) {
-      console.error('Error fetching stats:', error);
+      console.error('Error fetching stats:', error)
     }
-  };
+  }
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault()
     try {
-      if (editingContact) {
-        await axios.put(`${API_URL}/contacts/${editingContact.id}`, formData);
-      } else {
-        await axios.post(`${API_URL}/contacts`, formData);
+      const submitData = {
+        ...formData,
+        personality_type_id: formData.personality_type_id ? Number(formData.personality_type_id) : null
       }
-      resetForm();
-      fetchContacts();
-      fetchStats();
-    } catch (error) {
-      console.error('Error saving contact:', error);
-      alert('Errore nel salvare il contatto');
-    }
-  };
 
-  const handleDelete = async (id) => {
+      if (editingContact) {
+        await axios.put(`${API_URL}/contacts/${editingContact.id}`, submitData)
+      } else {
+        await axios.post(`${API_URL}/contacts`, submitData)
+      }
+      resetForm()
+      fetchContacts()
+      fetchStats()
+    } catch (error) {
+      console.error('Error saving contact:', error)
+      const axiosError = error as AxiosError<ErrorResponse>
+      alert(axiosError.response?.data?.error || 'Errore nel salvare il contatto')
+    }
+  }
+
+  const handleDelete = async (id: number): Promise<void> => {
     if (window.confirm('Sei sicuro di voler eliminare questo contatto?')) {
       try {
-        await axios.delete(`${API_URL}/contacts/${id}`);
-        fetchContacts();
-        fetchStats();
+        await axios.delete(`${API_URL}/contacts/${id}`)
+        fetchContacts()
+        fetchStats()
       } catch (error) {
-        console.error('Error deleting contact:', error);
+        console.error('Error deleting contact:', error)
       }
     }
-  };
+  }
 
-  const handleEdit = (contact) => {
-    setEditingContact(contact);
+  const handleEdit = (contact: Contact): void => {
+    setEditingContact(contact)
     setFormData({
       name: contact.name,
       surname: contact.surname || '',
       relationship: contact.relationship || '',
       personality_type_id: contact.personality_type_id || '',
       notes: contact.notes || ''
-    });
-    setShowForm(true);
-  };
+    })
+    setShowForm(true)
+  }
 
-  const resetForm = () => {
+  const resetForm = (): void => {
     setFormData({
       name: '',
       surname: '',
       relationship: '',
       personality_type_id: '',
       notes: ''
-    });
-    setEditingContact(null);
-    setShowForm(false);
-  };
+    })
+    setEditingContact(null)
+    setShowForm(false)
+  }
+
+  const handleInputChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ): void => {
+    const { name, value } = e.target
+    setFormData(prev => ({ ...prev, [name]: value }))
+  }
 
   const filteredContacts = contacts.filter(contact => {
-    if (!filter) return true;
-    return contact.personality_code === filter;
-  });
+    if (!filter) return true
+    return contact.personality_code === filter
+  })
 
   return (
     <div className="App">
@@ -136,15 +155,15 @@ function App() {
         </div>
 
         <div className="controls">
-          <button 
-            className="btn btn-primary" 
+          <button
+            className="btn btn-primary"
             onClick={() => setShowForm(!showForm)}
           >
             {showForm ? '✕ Chiudi' : '+ Aggiungi Contatto'}
           </button>
 
-          <select 
-            value={filter} 
+          <select
+            value={filter}
             onChange={(e) => setFilter(e.target.value)}
             className="filter-select"
           >
@@ -164,29 +183,33 @@ function App() {
               <div className="form-row">
                 <input
                   type="text"
+                  name="name"
                   placeholder="Nome *"
                   value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  onChange={handleInputChange}
                   required
                 />
                 <input
                   type="text"
+                  name="surname"
                   placeholder="Cognome"
                   value={formData.surname}
-                  onChange={(e) => setFormData({...formData, surname: e.target.value})}
+                  onChange={handleInputChange}
                 />
               </div>
 
               <div className="form-row">
                 <input
                   type="text"
+                  name="relationship"
                   placeholder="Relazione (es. amico, collega)"
                   value={formData.relationship}
-                  onChange={(e) => setFormData({...formData, relationship: e.target.value})}
+                  onChange={handleInputChange}
                 />
                 <select
+                  name="personality_type_id"
                   value={formData.personality_type_id}
-                  onChange={(e) => setFormData({...formData, personality_type_id: e.target.value})}
+                  onChange={handleInputChange}
                 >
                   <option value="">Seleziona tipo di personalità</option>
                   {personalityTypes.map(type => (
@@ -198,10 +221,11 @@ function App() {
               </div>
 
               <textarea
+                name="notes"
                 placeholder="Note"
                 value={formData.notes}
-                onChange={(e) => setFormData({...formData, notes: e.target.value})}
-                rows="3"
+                onChange={handleInputChange}
+                rows={3}
               />
 
               <div className="form-buttons">
@@ -255,7 +279,7 @@ function App() {
         </div>
       </div>
     </div>
-  );
+  )
 }
 
-export default App;
+export default App
