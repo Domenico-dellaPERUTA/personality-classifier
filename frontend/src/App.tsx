@@ -1,19 +1,27 @@
 // frontend/src/App.tsx
-import { useState, useEffect } from 'react'
-import type { FormEvent, ChangeEvent } from 'react'
+import { useState, useEffect, type FormEvent, type ChangeEvent } from 'react'
 import axios, { AxiosError } from 'axios'
 import './App.css'
-import type { Contact, PersonalityType, ContactFormData, Statistics } from './types'
+import { type Contact, type ContactFormData, type Statistics, MBTI_DIMENSIONS } from './types'
 
-const API_URL = '/api' // Usa il proxy di Vite
+const API_URL = '/api'
 
 interface ErrorResponse {
   error: string
 }
 
+// Funzione per calcolare il tipo MBTI dalle scale
+const calculateMBTI = (ei: number, sn: number, tf: number, jp: number): string => {
+  return (
+    (ei < 0 ? 'E' : 'I') +
+    (sn < 0 ? 'S' : 'N') +
+    (tf < 0 ? 'T' : 'F') +
+    (jp < 0 ? 'J' : 'P')
+  )
+}
+
 function App() {
   const [contacts, setContacts] = useState<Contact[]>([])
-  const [personalityTypes, setPersonalityTypes] = useState<PersonalityType[]>([])
   const [stats, setStats] = useState<Statistics>({ total: 0, byType: [] })
   const [showForm, setShowForm] = useState<boolean>(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
@@ -21,14 +29,16 @@ function App() {
     name: '',
     surname: '',
     relationship: '',
-    personality_type_id: '',
-    notes: ''
+    notes: '',
+    scale_ei: 0,
+    scale_sn: 0,
+    scale_tf: 0,
+    scale_jp: 0
   })
   const [filter, setFilter] = useState<string>('')
 
   useEffect(() => {
     fetchContacts()
-    fetchPersonalityTypes()
     fetchStats()
   }, [])
 
@@ -38,15 +48,6 @@ function App() {
       setContacts(response.data)
     } catch (error) {
       console.error('Error fetching contacts:', error)
-    }
-  }
-
-  const fetchPersonalityTypes = async (): Promise<void> => {
-    try {
-      const response = await axios.get<PersonalityType[]>(`${API_URL}/personality-types`)
-      setPersonalityTypes(response.data)
-    } catch (error) {
-      console.error('Error fetching personality types:', error)
     }
   }
 
@@ -62,15 +63,10 @@ function App() {
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault()
     try {
-      const submitData = {
-        ...formData,
-        personality_type_id: formData.personality_type_id ? Number(formData.personality_type_id) : null
-      }
-
       if (editingContact) {
-        await axios.put(`${API_URL}/contacts/${editingContact.id}`, submitData)
+        await axios.put(`${API_URL}/contacts/${editingContact.id}`, formData)
       } else {
-        await axios.post(`${API_URL}/contacts`, submitData)
+        await axios.post(`${API_URL}/contacts`, formData)
       }
       resetForm()
       fetchContacts()
@@ -100,8 +96,11 @@ function App() {
       name: contact.name,
       surname: contact.surname || '',
       relationship: contact.relationship || '',
-      personality_type_id: contact.personality_type_id || '',
-      notes: contact.notes || ''
+      notes: contact.notes || '',
+      scale_ei: contact.scale_ei || 0,
+      scale_sn: contact.scale_sn || 0,
+      scale_tf: contact.scale_tf || 0,
+      scale_jp: contact.scale_jp || 0
     })
     setShowForm(true)
   }
@@ -111,30 +110,50 @@ function App() {
       name: '',
       surname: '',
       relationship: '',
-      personality_type_id: '',
-      notes: ''
+      notes: '',
+      scale_ei: 0,
+      scale_sn: 0,
+      scale_tf: 0,
+      scale_jp: 0
     })
     setEditingContact(null)
     setShowForm(false)
   }
 
   const handleInputChange = (
-    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ): void => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
   }
 
+  const handleSliderChange = (dimension: string, value: number): void => {
+    setFormData(prev => ({ ...prev, [dimension]: value }))
+  }
+
+  const currentType = calculateMBTI(
+    formData.scale_ei,
+    formData.scale_sn,
+    formData.scale_tf,
+    formData.scale_jp
+  )
+
   const filteredContacts = contacts.filter(contact => {
     if (!filter) return true
-    return contact.personality_code === filter
+    const contactType = contact.calculated_type || contact.personality_code
+    return contactType === filter
   })
+
+  // Calcola tutti i tipi unici presenti
+  const uniqueTypes = Array.from(new Set(
+    contacts.map(c => c.calculated_type || c.personality_code).filter(Boolean)
+  )).sort()
 
   return (
     <div className="App">
       <header>
-        <h1>🧠 Classificatore di Personalità</h1>
-        <p>Gestisci i tuoi contatti con i 16 tipi di personalità MBTI</p>
+        <h1>🧠 Classificatore di Personalità MBTI</h1>
+        <p>Valuta i tuoi contatti sulle 4 dimensioni della personalità</p>
       </header>
 
       <div className="container">
@@ -168,9 +187,9 @@ function App() {
             className="filter-select"
           >
             <option value="">Tutti i tipi</option>
-            {personalityTypes.map(type => (
-              <option key={type.id} value={type.code}>
-                {type.code} - {type.name}
+            {uniqueTypes.map(type => (
+              <option key={type} value={type}>
+                {type}
               </option>
             ))}
           </select>
@@ -206,23 +225,72 @@ function App() {
                   value={formData.relationship}
                   onChange={handleInputChange}
                 />
-                <select
-                  name="personality_type_id"
-                  value={formData.personality_type_id}
-                  onChange={handleInputChange}
-                >
-                  <option value="">Seleziona tipo di personalità</option>
-                  {personalityTypes.map(type => (
-                    <option key={type.id} value={type.id}>
-                      {type.code} - {type.name}
-                    </option>
-                  ))}
-                </select>
+              </div>
+
+              <div className="mbti-result">
+                <h3>Tipo MBTI calcolato: <span className="mbti-badge">{currentType}</span></h3>
+                <p className="mbti-hint">Usa gli slider per valutare la personalità</p>
+              </div>
+
+              <div className="mbti-scales">
+                {MBTI_DIMENSIONS.map((dimension) => {
+                  const scaleKey = `scale_${dimension.code.toLowerCase()}` as keyof ContactFormData
+                  const value = formData[scaleKey] as number
+
+                  return (
+                    <div key={dimension.code} className="mbti-dimension">
+                      <div className="dimension-header">
+                        <h4>{dimension.name}</h4>
+                        <span className="dimension-value">
+                          {value < 0 ? dimension.negative.letter : dimension.positive.letter}
+                          {Math.abs(value)}
+                        </span>
+                      </div>
+
+                      <div className="dimension-labels">
+                        <div className="label-left">
+                          <strong>{dimension.negative.letter} - {dimension.negative.label}</strong>
+                          <p>{dimension.negative.description}</p>
+                          <ul className="traits">
+                            {dimension.negative.traits.slice(0, 2).map((trait, i) => (
+                              <li key={i}>{trait}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="label-right">
+                          <strong>{dimension.positive.letter} - {dimension.positive.label}</strong>
+                          <p>{dimension.positive.description}</p>
+                          <ul className="traits">
+                            {dimension.positive.traits.slice(0, 2).map((trait, i) => (
+                              <li key={i}>{trait}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+
+                      <div className="slider-container">
+                        <input
+                          type="range"
+                          min="-50"
+                          max="50"
+                          value={value}
+                          onChange={(e) => handleSliderChange(scaleKey, parseInt(e.target.value))}
+                          className="mbti-slider"
+                        />
+                        <div className="slider-scale">
+                          <span>{dimension.negative.letter}</span>
+                          <span>Neutro</span>
+                          <span>{dimension.positive.letter}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
 
               <textarea
                 name="notes"
-                placeholder="Note"
+                placeholder="Note e osservazioni"
                 value={formData.notes}
                 onChange={handleInputChange}
                 rows={3}
@@ -243,35 +311,85 @@ function App() {
         <div className="contacts-section">
           <h2>Contatti ({filteredContacts.length})</h2>
           <div className="contacts-grid">
-            {filteredContacts.map(contact => (
-              <div key={contact.id} className="contact-card">
-                <div className="contact-header">
-                  <h3>{contact.name} {contact.surname}</h3>
-                  {contact.personality_code && (
-                    <span className="personality-badge">
-                      {contact.personality_code}
-                    </span>
+            {filteredContacts.map(contact => {
+              const mbtiType = contact.calculated_type || contact.personality_code || 'N/A'
+              return (
+                <div key={contact.id} className="contact-card">
+                  <div className="contact-header">
+                    <h3>{contact.name} {contact.surname}</h3>
+                    <span className="personality-badge">{mbtiType}</span>
+                  </div>
+                  {contact.relationship && (
+                    <p className="relationship">{contact.relationship}</p>
                   )}
+                  <div className="contact-scales">
+                    <div className="scale-mini">
+                      <span>E/I:</span>
+                      <div className="scale-bar">
+                        <div 
+                          className="scale-fill" 
+                          style={{ 
+                            width: `${Math.abs((contact.scale_ei || 0) / 50 * 100)}%`,
+                            marginLeft: (contact.scale_ei || 0) < 0 ? '0' : 'auto'
+                          }}
+                        />
+                      </div>
+                      <span>{contact.scale_ei || 0 < 0 ? 'E' : 'I'}{Math.abs(contact.scale_ei || 0)}</span>
+                    </div>
+                    <div className="scale-mini">
+                      <span>S/N:</span>
+                      <div className="scale-bar">
+                        <div 
+                          className="scale-fill" 
+                          style={{ 
+                            width: `${Math.abs((contact.scale_sn || 0) / 50 * 100)}%`,
+                            marginLeft: (contact.scale_sn || 0) < 0 ? '0' : 'auto'
+                          }}
+                        />
+                      </div>
+                      <span>{contact.scale_sn || 0 < 0 ? 'S' : 'N'}{Math.abs(contact.scale_sn || 0)}</span>
+                    </div>
+                    <div className="scale-mini">
+                      <span>T/F:</span>
+                      <div className="scale-bar">
+                        <div 
+                          className="scale-fill" 
+                          style={{ 
+                            width: `${Math.abs((contact.scale_tf || 0) / 50 * 100)}%`,
+                            marginLeft: (contact.scale_tf || 0) < 0 ? '0' : 'auto'
+                          }}
+                        />
+                      </div>
+                      <span>{contact.scale_tf || 0 < 0 ? 'T' : 'F'}{Math.abs(contact.scale_tf || 0)}</span>
+                    </div>
+                    <div className="scale-mini">
+                      <span>J/P:</span>
+                      <div className="scale-bar">
+                        <div 
+                          className="scale-fill" 
+                          style={{ 
+                            width: `${Math.abs((contact.scale_jp || 0) / 50 * 100)}%`,
+                            marginLeft: (contact.scale_jp || 0) < 0 ? '0' : 'auto'
+                          }}
+                        />
+                      </div>
+                      <span>{contact.scale_jp || 0 < 0 ? 'J' : 'P'}{Math.abs(contact.scale_jp || 0)}</span>
+                    </div>
+                  </div>
+                  {contact.notes && (
+                    <p className="notes">{contact.notes}</p>
+                  )}
+                  <div className="contact-actions">
+                    <button onClick={() => handleEdit(contact)} className="btn-icon">
+                      ✏️ Modifica
+                    </button>
+                    <button onClick={() => handleDelete(contact.id)} className="btn-icon delete">
+                      🗑️ Elimina
+                    </button>
+                  </div>
                 </div>
-                {contact.relationship && (
-                  <p className="relationship">{contact.relationship}</p>
-                )}
-                {contact.personality_name && (
-                  <p className="personality-type">{contact.personality_name}</p>
-                )}
-                {contact.notes && (
-                  <p className="notes">{contact.notes}</p>
-                )}
-                <div className="contact-actions">
-                  <button onClick={() => handleEdit(contact)} className="btn-icon">
-                    ✏️ Modifica
-                  </button>
-                  <button onClick={() => handleDelete(contact.id)} className="btn-icon delete">
-                    🗑️ Elimina
-                  </button>
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
           {filteredContacts.length === 0 && (
             <p className="empty-state">Nessun contatto trovato. Aggiungi il primo!</p>

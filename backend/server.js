@@ -23,6 +23,24 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
+const personalityCode = async (req,res, personality_type_id, scale_ei, scale_jp, scale_sn, scale_tf) => {
+  
+    if( personality_type_id === undefined ) {
+      const calculated_type = 
+        (scale_ei < 0 ? 'E' : 'I') +
+        (scale_sn < 0 ? 'S' : 'N') +
+        (scale_tf < 0 ? 'T' : 'F') +
+        (scale_jp < 0 ? 'J' : 'P');
+
+      const [typeRows] = await pool.query('SELECT id FROM personality_types WHERE code = ?', [calculated_type]);
+      if (typeRows.length === 1) {
+        return typeRows[0].id;
+      } else {
+        return null;
+      }
+    }
+}
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
@@ -42,7 +60,16 @@ app.get('/api/personality-types', async (req, res) => {
 app.get('/api/contacts', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT c.*, pt.code as personality_code, pt.name as personality_name 
+      SELECT 
+        c.*,
+        pt.code as personality_code,
+        pt.name as personality_name,
+        CONCAT(
+          IF(c.scale_ei < 0, 'E', 'I'),
+          IF(c.scale_sn < 0, 'S', 'N'),
+          IF(c.scale_tf < 0, 'T', 'F'),
+          IF(c.scale_jp < 0, 'J', 'P')
+        ) as calculated_type
       FROM contacts c 
       LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
       ORDER BY c.name, c.surname
@@ -57,7 +84,16 @@ app.get('/api/contacts', async (req, res) => {
 app.get('/api/contacts/:id', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT c.*, pt.code as personality_code, pt.name as personality_name 
+      SELECT 
+        c.*,
+        pt.code as personality_code,
+        pt.name as personality_name,
+        CONCAT(
+          IF(c.scale_ei < 0, 'E', 'I'),
+          IF(c.scale_sn < 0, 'S', 'N'),
+          IF(c.scale_tf < 0, 'T', 'F'),
+          IF(c.scale_jp < 0, 'J', 'P')
+        ) as calculated_type
       FROM contacts c 
       LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
       WHERE c.id = ?
@@ -75,19 +111,45 @@ app.get('/api/contacts/:id', async (req, res) => {
 // Create new contact
 app.post('/api/contacts', async (req, res) => {
   try {
-    const { name, surname, relationship, personality_type_id, notes } = req.body;
+    const { name, surname, relationship, personality_type_id, notes,scale_ei,scale_sn ,scale_tf,scale_jp } = req.body;
     
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
 
+    let personality_type = personality_type_id;
+    if( personality_type_id === undefined ) {
+      personality_type = await personalityCode(req, res, personality_type_id, scale_ei, scale_jp, scale_sn, scale_tf);
+    }else{
+      return res.status(404).json({ error: 'Personality types not found' });
+    }
+
     const [result] = await pool.query(
-      'INSERT INTO contacts (name, surname, relationship, personality_type_id, notes) VALUES (?, ?, ?, ?, ?)',
-      [name, surname, relationship, personality_type_id || null, notes]
+      'INSERT INTO contacts (name, surname, relationship, personality_type_id, notes, scale_ei, scale_sn, scale_tf, scale_jp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        name,
+        surname || null,
+        relationship || null,
+        personality_type,
+        notes || null,
+        scale_ei || 0,
+        scale_sn || 0,
+        scale_tf || 0,
+        scale_jp || 0
+      ]
     );
 
-    const [newContact] = await pool.query(`
-      SELECT c.*, pt.code as personality_code, pt.name as personality_name 
+    const [newContact] = await pool.query( `
+      SELECT 
+        c.*,
+        pt.code as personality_code,
+        pt.name as personality_name,
+        CONCAT(
+          IF(c.scale_ei < 0, 'E', 'I'),
+          IF(c.scale_sn < 0, 'S', 'N'),
+          IF(c.scale_tf < 0, 'T', 'F'),
+          IF(c.scale_jp < 0, 'J', 'P')
+        ) as calculated_type
       FROM contacts c 
       LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
       WHERE c.id = ?
@@ -102,19 +164,46 @@ app.post('/api/contacts', async (req, res) => {
 // Update contact
 app.put('/api/contacts/:id', async (req, res) => {
   try {
-    const { name, surname, relationship, personality_type_id, notes } = req.body;
+    const { name, surname, relationship, personality_type_id, notes, scale_ei, scale_sn, scale_tf, scale_jp } = req.body;
     
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
 
+    let personality_type = personality_type_id;
+    if( personality_type_id === undefined ) {
+      personality_type = await personalityCode(req, res, personality_type_id, scale_ei, scale_jp, scale_sn, scale_tf);
+    }else{
+      return res.status(404).json({ error: 'Personality types not found' });
+    }
+
     await pool.query(
-      'UPDATE contacts SET name = ?, surname = ?, relationship = ?, personality_type_id = ?, notes = ? WHERE id = ?',
-      [name, surname, relationship, personality_type_id || null, notes, req.params.id]
+      'UPDATE contacts SET name = ?, surname = ?, relationship = ?, personality_type_id = ?, notes = ?, scale_ei = ?, scale_sn = ?, scale_tf = ?, scale_jp = ? WHERE id = ?',
+      [
+        name,
+        surname || null,
+        relationship || null,
+        personality_type,
+        notes || null,
+        scale_ei ?? 0,
+        scale_sn ?? 0,
+        scale_tf ?? 0,
+        scale_jp ?? 0,
+        req.params.id
+      ]
     );
 
     const [updatedContact] = await pool.query(`
-      SELECT c.*, pt.code as personality_code, pt.name as personality_name 
+      SELECT 
+        c.*,
+        pt.code as personality_code,
+        pt.name as personality_name,
+        CONCAT(
+          IF(c.scale_ei < 0, 'E', 'I'),
+          IF(c.scale_sn < 0, 'S', 'N'),
+          IF(c.scale_tf < 0, 'T', 'F'),
+          IF(c.scale_jp < 0, 'J', 'P')
+        ) as calculated_type
       FROM contacts c 
       LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
       WHERE c.id = ?
