@@ -22,7 +22,7 @@ const calculateMBTI = (ei: number, sn: number, tf: number, jp: number): string =
 
 function App() {
   const [contacts, setContacts] = useState<Contact[]>([])
-  const [stats, setStats] = useState<Statistics>({ total: 0, byType: [] })
+  const [stats, setStats] = useState<Statistics>({ total: 0, byRelationship: [] })
   const [showForm, setShowForm] = useState<boolean>(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
   const [formData, setFormData] = useState<ContactFormData>({
@@ -140,13 +140,13 @@ function App() {
 
   const filteredContacts = contacts.filter(contact => {
     if (!filter) return true
-    const contactType = contact.calculated_type || contact.personality_code
+    const contactType =  contact.personality_code
     return contactType === filter
   })
 
   // Calcola tutti i tipi unici presenti
   const uniqueTypes = Array.from(new Set(
-    contacts.map(c => c.calculated_type || c.personality_code).filter(Boolean)
+    contacts.map(c => c.personality_code).filter((t): t is string => t !== null && t !== '')
   )).sort()
 
   return (
@@ -158,16 +158,20 @@ function App() {
 
       <div className="container">
         <div className="stats-section">
-          <h2>Statistiche</h2>
+          <h2>Statistiche per Relazione</h2>
           <div className="stats-grid">
             <div className="stat-card total">
               <h3>Totale Contatti</h3>
               <p className="stat-number">{stats.total}</p>
             </div>
-            {stats.byType.slice(0, 5).map(type => (
-              <div key={type.code} className="stat-card">
-                <h4>{type.code}</h4>
-                <p>{type.count} persona/e</p>
+            {stats.byRelationship.slice(0, 5).map(rel => (
+              <div key={rel.relationship} className="stat-card">
+                <h4>{rel.relationship}</h4>
+                <p className="stat-count">{rel.total_count} persona/e</p>
+                <p className="stat-types">{rel.unique_types} tipo/i</p>
+                {rel.types && (
+                  <p className="stat-types-list">{rel.types}</p>
+                )}
               </div>
             ))}
           </div>
@@ -312,7 +316,7 @@ function App() {
           <h2>Contatti ({filteredContacts.length})</h2>
           <div className="contacts-grid">
             {filteredContacts.map(contact => {
-              const mbtiType = contact.calculated_type || contact.personality_code || 'N/A'
+              const mbtiType = contact.personality_code || 'N/A'
               return (
                 <div key={contact.id} className="contact-card">
                   <div className="contact-header">

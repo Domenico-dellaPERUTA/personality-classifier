@@ -38,10 +38,11 @@ export interface ContactFormData {
 
 export interface Statistics {
   total: number;
-  byType: {
-    code: string;
-    name: string;
-    count: number;
+  byRelationship: {
+    relationship: string;
+    total_count: number;
+    unique_types: number;
+    types: string | null;
   }[];
 }
 

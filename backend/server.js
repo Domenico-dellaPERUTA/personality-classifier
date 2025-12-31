@@ -1,8 +1,8 @@
 // backend/server.js
-const express = require('express');
-const mysql = require('mysql2/promise');
-const cors = require('cors');
-const bodyParser = require('body-parser');
+import express from 'express';
+import { createPool } from 'mysql2/promise';
+import cors from 'cors';
+import { json } from 'body-parser';
 require('dotenv').config();
 
 const app = express();
@@ -10,10 +10,10 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(json());
 
 // Database connection pool
-const pool = mysql.createPool({
+const pool = createPool({
   host: process.env.DB_HOST || 'localhost',
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
@@ -247,17 +247,23 @@ app.delete('/api/contacts/:id', async (req, res) => {
 app.get('/api/stats', async (req, res) => {
   try {
     const [total] = await pool.query('SELECT COUNT(*) as count FROM contacts');
-    const [byType] = await pool.query(`
-      SELECT pt.code, pt.name, COUNT(c.id) as count 
-      FROM personality_types pt 
-      LEFT JOIN contacts c ON pt.id = c.personality_type_id 
-      GROUP BY pt.id, pt.code, pt.name
-      ORDER BY count DESC
+    
+    // Statistiche per relazione con dettaglio dei tipi
+    const [byRelationship] = await pool.query(`
+      SELECT 
+        COALESCE(c.relationship, 'Non specificato') as relationship,
+        COUNT(c.id) as total_count,
+        COUNT(DISTINCT pt.code) as unique_types,
+        GROUP_CONCAT(DISTINCT pt.code ORDER BY pt.code SEPARATOR ', ') as types
+      FROM contacts c
+      LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
+      GROUP BY c.relationship
+      ORDER BY total_count DESC
     `);
     
     res.json({
       total: total[0].count,
-      byType: byType
+      byRelationship: byRelationship
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
