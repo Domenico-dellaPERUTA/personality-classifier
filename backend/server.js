@@ -23,23 +23,22 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
-const personalityCode = async (req,res, personality_type_id, scale_ei, scale_jp, scale_sn, scale_tf) => {
-  
-    if( personality_type_id === undefined ) {
-      const calculated_type = 
-        (scale_ei < 0 ? 'E' : 'I') +
-        (scale_sn < 0 ? 'S' : 'N') +
-        (scale_tf < 0 ? 'T' : 'F') +
-        (scale_jp < 0 ? 'J' : 'P');
+// Funzione per calcolare personality_type_id dalle scale
+const getPersonalityTypeId = async (scale_ei, scale_sn, scale_tf, scale_jp) => {
+  const calculated_type = 
+    (scale_ei < 0 ? 'E' : 'I') +
+    (scale_sn < 0 ? 'S' : 'N') +
+    (scale_tf < 0 ? 'T' : 'F') +
+    (scale_jp < 0 ? 'J' : 'P');
 
-      const [typeRows] = await pool.query('SELECT id FROM personality_types WHERE code = ?', [calculated_type]);
-      if (typeRows.length === 1) {
-        return typeRows[0].id;
-      } else {
-        return null;
-      }
-    }
-}
+  const [typeRows] = await pool.query('SELECT id FROM personality_types WHERE code = ?', [calculated_type]);
+  
+  if (typeRows.length === 1) {
+    return typeRows[0].id;
+  }
+  
+  return null;
+};
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -111,17 +110,22 @@ app.get('/api/contacts/:id', async (req, res) => {
 // Create new contact
 app.post('/api/contacts', async (req, res) => {
   try {
-    const { name, surname, relationship, personality_type_id, notes,scale_ei,scale_sn ,scale_tf,scale_jp } = req.body;
+    const { name, surname, relationship, notes, scale_ei, scale_sn, scale_tf, scale_jp } = req.body;
     
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    let personality_type = personality_type_id;
-    if( personality_type_id === undefined ) {
-      personality_type = await personalityCode(req, res, personality_type_id, scale_ei, scale_jp, scale_sn, scale_tf);
-    }else{
-      return res.status(404).json({ error: 'Personality types not found' });
+    // Calcola personality_type_id dalle scale
+    const personality_type_id = await getPersonalityTypeId(
+      scale_ei || 0,
+      scale_sn || 0,
+      scale_tf || 0,
+      scale_jp || 0
+    );
+
+    if (!personality_type_id) {
+      return res.status(400).json({ error: 'Invalid personality type calculated' });
     }
 
     const [result] = await pool.query(
@@ -130,7 +134,7 @@ app.post('/api/contacts', async (req, res) => {
         name,
         surname || null,
         relationship || null,
-        personality_type,
+        personality_type_id,
         notes || null,
         scale_ei || 0,
         scale_sn || 0,
@@ -139,7 +143,7 @@ app.post('/api/contacts', async (req, res) => {
       ]
     );
 
-    const [newContact] = await pool.query( `
+    const [newContact] = await pool.query(`
       SELECT 
         c.*,
         pt.code as personality_code,
@@ -164,17 +168,22 @@ app.post('/api/contacts', async (req, res) => {
 // Update contact
 app.put('/api/contacts/:id', async (req, res) => {
   try {
-    const { name, surname, relationship, personality_type_id, notes, scale_ei, scale_sn, scale_tf, scale_jp } = req.body;
+    const { name, surname, relationship, notes, scale_ei, scale_sn, scale_tf, scale_jp } = req.body;
     
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    let personality_type = personality_type_id;
-    if( personality_type_id === undefined ) {
-      personality_type = await personalityCode(req, res, personality_type_id, scale_ei, scale_jp, scale_sn, scale_tf);
-    }else{
-      return res.status(404).json({ error: 'Personality types not found' });
+    // Calcola personality_type_id dalle scale
+    const personality_type_id = await getPersonalityTypeId(
+      scale_ei ?? 0,
+      scale_sn ?? 0,
+      scale_tf ?? 0,
+      scale_jp ?? 0
+    );
+
+    if (!personality_type_id) {
+      return res.status(400).json({ error: 'Invalid personality type calculated' });
     }
 
     await pool.query(
@@ -183,7 +192,7 @@ app.put('/api/contacts/:id', async (req, res) => {
         name,
         surname || null,
         relationship || null,
-        personality_type,
+        personality_type_id,
         notes || null,
         scale_ei ?? 0,
         scale_sn ?? 0,
