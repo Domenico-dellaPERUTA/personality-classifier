@@ -2,14 +2,14 @@
   "name": "backend",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start-localhost": "launchctl load ~/Library/LaunchAgents/com.personalityapp.backend.plist",
     "stop-localhost": "launchctl unload ~/Library/LaunchAgents/com.personalityapp.backend.plist",
     "restart-localhost": "launchctl unload  ~/Library/LaunchAgents/com.personalityapp.backend.plist && launchctl load ~/Library/LaunchAgents/com.personalityapp.backend.plist",
-    "start-dev": "node server.js"
-
+    "start-dev": "ts-node src/server.ts",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
@@ -21,5 +21,12 @@
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "mysql2": "^3.16.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.0.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,64 +1,77 @@
-// backend/server.js
-import express from 'express';
-import { createPool } from 'mysql2/promise';
+// backend/src/server.ts
+import express, { Request, Response } from 'express';
+import { createPool, Pool, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import cors from 'cors';
-import { json } from 'body-parser';
-require('dotenv').config();
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({
+  path: path.resolve(__dirname, '../.env')
+});
+
+
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT: number = Number(process.env.PORT) || 3001;
 
 // Middleware
 app.use(cors());
-app.use(json());
+app.use(express.json());
 
 // Database connection pool
-const pool = createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'personality_app',
+const pool: Pool = createPool({
+  host: process.env.DB_HOST ?? 'localhost',
+  user: process.env.DB_USER ?? 'root',
+  password: process.env.DB_PASSWORD ?? '',
+  database: process.env.DB_NAME ?? 'personality_app',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
 });
 
-// Funzione per calcolare personality_type_id dalle scale
-const getPersonalityTypeId = async (scale_ei, scale_sn, scale_tf, scale_jp) => {
-  const calculated_type = 
+// Utility function to calculate personality_type_id from scales
+const getPersonalityTypeId = async (
+  scale_ei: number,
+  scale_sn: number,
+  scale_tf: number,
+  scale_jp: number
+): Promise<number | null> => {
+  const calculated_type =
     (scale_ei < 0 ? 'E' : 'I') +
     (scale_sn < 0 ? 'S' : 'N') +
     (scale_tf < 0 ? 'T' : 'F') +
     (scale_jp < 0 ? 'J' : 'P');
 
-  const [typeRows] = await pool.query('SELECT id FROM personality_types WHERE code = ?', [calculated_type]);
-  
-  if (typeRows.length === 1) {
-    return typeRows[0].id;
-  }
-  
-  return null;
+  const [rows] = await pool.query<RowDataPacket[]>(
+    'SELECT id FROM personality_types WHERE code = ?',
+    [calculated_type]
+  );
+
+  return rows.length === 1 ? (rows[0].id as number) : null;
 };
 
 // Health check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', message: 'Server is running' });
 });
 
 // Get all personality types
-app.get('/api/personality-types', async (req, res) => {
+app.get('/api/personality-types', async (_req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM personality_types ORDER BY code');
+    const [rows] = await pool.query<RowDataPacket[]>(
+      'SELECT * FROM personality_types ORDER BY code'
+    );
     res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Get all contacts
-app.get('/api/contacts', async (req, res) => {
+app.get('/api/contacts', async (_req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query(`
+    const [rows] = await pool.query<RowDataPacket[]>(`
       SELECT 
         c.*,
         pt.code as personality_code,
@@ -73,16 +86,18 @@ app.get('/api/contacts', async (req, res) => {
       LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
       ORDER BY c.name, c.surname
     `);
+
     res.json(rows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Get single contact
-app.get('/api/contacts/:id', async (req, res) => {
+app.get('/api/contacts/:id', async (req: Request, res: Response) => {
   try {
-    const [rows] = await pool.query(`
+    const [rows] = await pool.query<RowDataPacket[]>(`
       SELECT 
         c.*,
         pt.code as personality_code,
@@ -97,53 +112,65 @@ app.get('/api/contacts/:id', async (req, res) => {
       LEFT JOIN personality_types pt ON c.personality_type_id = pt.id
       WHERE c.id = ?
     `, [req.params.id]);
-    
+
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Contact not found' });
     }
+
     res.json(rows[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Create new contact
-app.post('/api/contacts', async (req, res) => {
+app.post('/api/contacts', async (req: Request, res: Response) => {
   try {
-    const { name, surname, relationship, notes, scale_ei, scale_sn, scale_tf, scale_jp } = req.body;
-    
+    const {
+      name,
+      surname,
+      relationship,
+      notes,
+      scale_ei,
+      scale_sn,
+      scale_tf,
+      scale_jp
+    } = req.body as Record<string, any>;
+
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    // Calcola personality_type_id dalle scale
     const personality_type_id = await getPersonalityTypeId(
-      scale_ei || 0,
-      scale_sn || 0,
-      scale_tf || 0,
-      scale_jp || 0
+      Number(scale_ei) || 0,
+      Number(scale_sn) || 0,
+      Number(scale_tf) || 0,
+      Number(scale_jp) || 0
     );
 
     if (!personality_type_id) {
       return res.status(400).json({ error: 'Invalid personality type calculated' });
     }
 
-    const [result] = await pool.query(
-      'INSERT INTO contacts (name, surname, relationship, personality_type_id, notes, scale_ei, scale_sn, scale_tf, scale_jp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO contacts 
+       (name, surname, relationship, personality_type_id, notes, scale_ei, scale_sn, scale_tf, scale_jp)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
-        surname || null,
-        relationship || null,
+        surname ?? null,
+        relationship ?? null,
         personality_type_id,
-        notes || null,
-        scale_ei || 0,
-        scale_sn || 0,
-        scale_tf || 0,
-        scale_jp || 0
+        notes ?? null,
+        Number(scale_ei) || 0,
+        Number(scale_sn) || 0,
+        Number(scale_tf) || 0,
+        Number(scale_jp) || 0
       ]
     );
 
-    const [newContact] = await pool.query(`
+    const [newContact] = await pool.query<RowDataPacket[]>(`
       SELECT 
         c.*,
         pt.code as personality_code,
@@ -161,25 +188,34 @@ app.post('/api/contacts', async (req, res) => {
 
     res.status(201).json(newContact[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Update contact
-app.put('/api/contacts/:id', async (req, res) => {
+app.put('/api/contacts/:id', async (req: Request, res: Response) => {
   try {
-    const { name, surname, relationship, notes, scale_ei, scale_sn, scale_tf, scale_jp } = req.body;
-    
+    const {
+      name,
+      surname,
+      relationship,
+      notes,
+      scale_ei,
+      scale_sn,
+      scale_tf,
+      scale_jp
+    } = req.body as Record<string, any>;
+
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
     }
 
-    // Calcola personality_type_id dalle scale
     const personality_type_id = await getPersonalityTypeId(
-      scale_ei ?? 0,
-      scale_sn ?? 0,
-      scale_tf ?? 0,
-      scale_jp ?? 0
+      Number(scale_ei) ?? 0,
+      Number(scale_sn) ?? 0,
+      Number(scale_tf) ?? 0,
+      Number(scale_jp) ?? 0
     );
 
     if (!personality_type_id) {
@@ -187,22 +223,25 @@ app.put('/api/contacts/:id', async (req, res) => {
     }
 
     await pool.query(
-      'UPDATE contacts SET name = ?, surname = ?, relationship = ?, personality_type_id = ?, notes = ?, scale_ei = ?, scale_sn = ?, scale_tf = ?, scale_jp = ? WHERE id = ?',
+      `UPDATE contacts SET
+        name = ?, surname = ?, relationship = ?, personality_type_id = ?, notes = ?,
+        scale_ei = ?, scale_sn = ?, scale_tf = ?, scale_jp = ?
+       WHERE id = ?`,
       [
         name,
-        surname || null,
-        relationship || null,
+        surname ?? null,
+        relationship ?? null,
         personality_type_id,
-        notes || null,
-        scale_ei ?? 0,
-        scale_sn ?? 0,
-        scale_tf ?? 0,
-        scale_jp ?? 0,
+        notes ?? null,
+        Number(scale_ei) ?? 0,
+        Number(scale_sn) ?? 0,
+        Number(scale_tf) ?? 0,
+        Number(scale_jp) ?? 0,
         req.params.id
       ]
     );
 
-    const [updatedContact] = await pool.query(`
+    const [updatedContact] = await pool.query<RowDataPacket[]>(`
       SELECT 
         c.*,
         pt.code as personality_code,
@@ -224,32 +263,38 @@ app.put('/api/contacts/:id', async (req, res) => {
 
     res.json(updatedContact[0]);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Delete contact
-app.delete('/api/contacts/:id', async (req, res) => {
+app.delete('/api/contacts/:id', async (req: Request, res: Response) => {
   try {
-    const [result] = await pool.query('DELETE FROM contacts WHERE id = ?', [req.params.id]);
-    
+    const [result] = await pool.query<ResultSetHeader>(
+      'DELETE FROM contacts WHERE id = ?',
+      [req.params.id]
+    );
+
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Contact not found' });
     }
 
     res.json({ message: 'Contact deleted successfully' });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
 // Get statistics
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', async (_req: Request, res: Response) => {
   try {
-    const [total] = await pool.query('SELECT COUNT(*) as count FROM contacts');
-    
-    // Statistiche per relazione con dettaglio dei tipi
-    const [byRelationship] = await pool.query(`
+    const [total] = await pool.query<RowDataPacket[]>(
+      'SELECT COUNT(*) as count FROM contacts'
+    );
+
+    const [byRelationship] = await pool.query<RowDataPacket[]>(`
       SELECT 
         COALESCE(c.relationship, 'Non specificato') as relationship,
         COUNT(c.id) as total_count,
@@ -260,13 +305,14 @@ app.get('/api/stats', async (req, res) => {
       GROUP BY c.relationship
       ORDER BY total_count DESC
     `);
-    
+
     res.json({
       total: total[0].count,
-      byRelationship: byRelationship
+      byRelationship
     });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    const err = error as Error;
+    res.status(500).json({ error: err.message });
   }
 });
 
