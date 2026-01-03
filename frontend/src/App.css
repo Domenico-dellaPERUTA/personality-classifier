@@ -498,6 +498,27 @@ form textarea {
   font-size: 1.1rem;
 }
 
+/* App.css - Aggiungi queste regole */
+.matrix-section {
+  margin-top: 2rem;
+  padding-top: 2rem;
+  border-top: 1px solid #eee;
+}
+
+/* Per la visualizzazione compatta su mobile */
+@media (max-width: 768px) {
+  .matrix-container {
+    font-size: 0.8rem;
+  }
+  
+  .matrix-header-cell,
+  .matrix-row-header,
+  .matrix-cell {
+    padding: 0.5rem;
+    min-height: 60px;
+  }
+}
+
 @media (max-width: 768px) {
   .App {
     padding: 1rem;

@@ -94,6 +94,201 @@ app.get('/api/contacts', async (_req: Request, res: Response) => {
   }
 });
 
+
+
+
+// API per ottenere la matrice delle relazioni tra contatti
+interface RelationshipData {
+  contact1: {
+    id: number;
+    name: string;
+    type: string;
+  };
+  contact2: {
+    id: number;
+    name: string;
+    type: string;
+  };
+  relationship: string;
+  emoji: string;
+  colorCode: string;
+  compatibility: number;
+  description: string;
+  compatibilityText: string;
+}
+
+interface MatrixData {
+  contacts: Array<{
+    id: number;
+    name: string;
+    type: string;
+  }>;
+  relationships: RelationshipData[];
+  compatibilityLevels: Array<{
+    level: number;
+    label: string;
+    color: string;
+  }>;
+}
+
+// Aggiungi questa API dopo le altre API esistenti
+app.get('/api/contacts/relationships', async (req: Request, res: Response) => {
+  try {
+    const [relationships] = await pool.execute<RowDataPacket[]>(`
+      SELECT 
+        c1.id as contact_1_id,
+        CONCAT(c1.name, ' ', COALESCE(c1.surname, '')) as contact_1_name,
+        pt1.code as contact_1_type,
+        c2.id as contact_2_id,
+        CONCAT(c2.name, ' ', COALESCE(c2.surname, '')) as contact_2_name,
+        pt2.code as contact_2_type,
+        r.relationship_term,
+        r.emoji,
+        r.color_code,
+        r.compatibility_level,
+        rt.description as relationship_description,
+        CASE 
+          WHEN r.compatibility_level >= 4 THEN 'Alta compatibilità'
+          WHEN r.compatibility_level = 3 THEN 'Compatibilità media'
+          WHEN r.compatibility_level = 2 THEN 'Compatibilità bassa'
+          ELSE 'Compatibilità molto bassa'
+        END as compatibility_text
+      FROM contacts c1
+      JOIN contacts c2 ON c1.id < c2.id
+      JOIN personality_types pt1 ON c1.personality_type_id = pt1.id
+      JOIN personality_types pt2 ON c2.personality_type_id = pt2.id
+      JOIN mbti_relationships r ON pt1.code = r.type_a AND pt2.code = r.type_b
+      JOIN mbti_relationship_types rt ON r.relationship_term = rt.term
+      ORDER BY c1.id, r.compatibility_level DESC
+    `);
+
+    const [contacts] = await pool.execute<RowDataPacket[]>(
+      'SELECT id, name, surname, personality_type_id FROM contacts ORDER BY name'
+    );
+
+    const [personalityTypes] = await pool.execute<RowDataPacket[]>(
+      'SELECT id, code FROM personality_types'
+    );
+
+    const typeMap: Record<number, string> = {};
+    personalityTypes.forEach((pt: any) => {
+      typeMap[pt.id] = pt.code;
+    });
+
+    const matrixData: MatrixData = {
+      contacts: contacts.map((contact: any) => ({
+        id: contact.id,
+        name: `${contact.name} ${contact.surname || ''}`.trim(),
+        type: typeMap[contact.personality_type_id] || 'N/A'
+      })),
+      relationships: relationships.map((rel: any) => ({
+        contact1: {
+          id: rel.contact_1_id,
+          name: rel.contact_1_name,
+          type: rel.contact_1_type
+        },
+        contact2: {
+          id: rel.contact_2_id,
+          name: rel.contact_2_name,
+          type: rel.contact_2_type
+        },
+        relationship: rel.relationship_term,
+        emoji: rel.emoji,
+        colorCode: rel.color_code,
+        compatibility: rel.compatibility_level,
+        description: rel.relationship_description,
+        compatibilityText: rel.compatibility_text
+      })),
+      compatibilityLevels: [
+        { level: 5, label: 'Alta', color: 'green' },
+        { level: 4, label: 'Media-Alta', color: 'blue' },
+        { level: 3, label: 'Media', color: 'yellow' },
+        { level: 2, label: 'Bassa', color: 'orange' },
+        { level: 1, label: 'Molto Bassa', color: 'red' }
+      ]
+    };
+
+    res.json(matrixData);
+  } catch (error) {
+    console.error('Error fetching contact relationships:', error);
+    res.status(500).json({ error: 'Errore nel recupero delle relazioni' });
+  }
+});
+
+// API per popolare le tabelle delle relazioni (utile per sviluppo)
+app.post('/api/admin/populate-relationships', async (req: Request, res: Response) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(403).json({ error: 'Operazione non permessa in produzione' });
+  }
+
+  try {
+    const conn = await pool.getConnection();
+    
+    // 1. Popola la tabella mbti_relationship_types
+    await conn.execute(`
+      INSERT IGNORE INTO mbti_relationship_types (term, color_code, emoji, description, compatibility_level) VALUES
+      ('Gemello', 'V', '🟢', 'Stesso tipo MBTI. Massima comprensione immediata.', 5),
+      ('Fratello', 'V', '🟢', 'Gruppo cognitivo comune. Forte affinità naturale.', 5),
+      ('Alleato', 'V', '🟢', 'Funzioni cognitive che si supportano. Buon equilibrio.', 4),
+      ('Simili', 'B', '🔵', 'Condividono 3 lettere su 4. Visione affine.', 4),
+      ('Complementari', 'B', '🔵', 'Funzioni opposte che si bilanciano idealmente.', 4),
+      ('Polo opposto', 'R', '🔴', 'Differiscono su 3 lettere.', 2),
+      ('Opposti', 'N', '⚫', 'Opposti su tutte 4 lettere. Massimo potenziale.', 1),
+      ('Logici', 'B', '🔵', 'Si incontrano sulla funzione Thinking.', 3),
+      ('Empatici', 'B', '🔵', 'Si incontrano sulla funzione Feeling.', 3),
+      ('Strutturati', 'G', '🟡', 'Atteggiamento simile verso pianificazione (J).', 2)
+    `);
+
+    // 2. Popola la matrice mbti_relationships con le relazioni più comuni
+    // (Inserisco solo alcuni esempi per non rendere il codice troppo lungo)
+    await conn.execute(`
+      INSERT IGNORE INTO mbti_relationships 
+        (type_a, type_b, relationship_term, color_code, emoji, compatibility_level, notes) 
+      VALUES
+        ('INTJ', 'INTJ', 'Gemello', 'V', '🟢', 5, 'Stesso tipo'),
+        ('INTJ', 'INTP', 'Logici', 'B', '🔵', 3, 'Condividono T'),
+        ('INTJ', 'INFJ', 'Fratello', 'V', '🟢', 4, 'Stesse funzioni'),
+        ('INTJ', 'ENTP', 'Cognitivi', 'G', '🟡', 3, 'Complementari'),
+        ('INFJ', 'ENFP', 'Complementari', 'B', '🔵', 4, 'Opposti che si attraggono'),
+        ('ISTJ', 'ENFP', 'Opposti', 'N', '⚫', 1, 'Tutte lettere opposte')
+    `);
+
+    conn.release();
+    res.json({ 
+      message: 'Tabelle delle relazioni popolate',
+      note: 'Per la matrice completa 16x16, esegui lo script SQL separato' 
+    });
+  } catch (error) {
+    console.error('Error populating relationships:', error);
+    res.status(500).json({ error: 'Errore nel popolamento delle relazioni' });
+  }
+});
+
+// API per verificare lo stato delle tabelle delle relazioni
+app.get('/api/admin/relationships-status', async (req: Request, res: Response) => {
+  try {
+    const [typesCount] = await pool.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) as count FROM mbti_relationship_types'
+    );
+    
+    const [relationshipsCount] = await pool.execute<RowDataPacket[]>(
+      'SELECT COUNT(*) as count FROM mbti_relationships'
+    );
+
+    res.json({
+      mbti_relationship_types: typesCount[0].count,
+      mbti_relationships: relationshipsCount[0].count,
+      status: typesCount[0].count > 0 && relationshipsCount[0].count > 0 
+        ? 'Tabelle popolate' 
+        : 'Tabelle vuote o non esistenti'
+    });
+  } catch (error) {
+    console.error('Error checking relationships status:', error);
+    res.status(500).json({ error: 'Errore nel controllo dello stato' });
+  }
+});
+
+
 // Get single contact
 app.get('/api/contacts/:id', async (req: Request, res: Response) => {
   try {
@@ -315,6 +510,7 @@ app.get('/api/stats', async (_req: Request, res: Response) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // Start server
 app.listen(PORT, () => {

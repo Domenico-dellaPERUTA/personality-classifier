@@ -3,6 +3,7 @@ import { useState, useEffect, type FormEvent, type ChangeEvent } from 'react'
 import axios, { AxiosError } from 'axios'
 import './App.css'
 import { type Contact, type ContactFormData, type Statistics, MBTI_DIMENSIONS } from './types'
+import RelationshipMatrix from './components/RelationshipMatrix';
 
 const API_URL = '/api'
 
@@ -174,6 +175,10 @@ function App() {
                 )}
               </div>
             ))}
+          </div>
+          {/* Aggiungi la matrice qui */}
+          <div className="matrix-section">
+            <RelationshipMatrix />
           </div>
         </div>
 
