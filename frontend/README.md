@@ -955,6 +955,5 @@ Per problemi o domande:
 
 ---
 
-**Creato con ❤️ per organizzare i tuoi contatti secondo i tipi di personalità MBTI**
 
 *Versione 2.0.0 - TypeScript Edition con Sistema Completo di Relazioni*

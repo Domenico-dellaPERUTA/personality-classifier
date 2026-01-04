@@ -1,0 +1,4 @@
+aggiungi com.personalityapp.backend.plist:
+
+
+~/Library/LaunchAgents/com.personalityapp.backend.plist
