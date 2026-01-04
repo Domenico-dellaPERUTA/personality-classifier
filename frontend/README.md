@@ -20,6 +20,8 @@ Applicazione web per classificare contatti secondo i 16 tipi di personalità MBT
 - 🎚️ **4 Slider Interattivi** - Valuta ogni dimensione MBTI separatamente (E-I, S-N, T-F, J-P)
 - 🧮 **Calcolo Automatico** - Il tipo MBTI viene calcolato automaticamente dalle scale
 - 📊 **Statistiche per Relazione** - Visualizza distribuzione per tipo di relazione (famiglia, amici, colleghi)
+- 🔗 **Sistema di Affinità** - Visualizza la compatibilità di ogni contatto con tutti gli altri
+- 🧭 **Matrice delle Relazioni** - Visualizzazione completa di tutte le relazioni tra contatti (vista matrice e lista)
 - 💾 **Persistenza Dati** - Database MariaDB per storage affidabile
 - 🔄 **Hot Reload** - Sviluppo rapido con Vite
 - 🎨 **Design Moderno** - Interfaccia responsive e intuitiva
@@ -45,6 +47,9 @@ personality-classifier/
     ├── node_modules/              # Dipendenze frontend
     ├── public/                    # File statici
     ├── src/                       # Codice sorgente React + TypeScript
+    │   ├── components/           # Componenti React
+    │   │   ├── RelationshipMatrix.tsx  # Matrice relazioni
+    │   │   └── RelationshipMatrix.css  # Stili matrice
     │   ├── App.tsx               # Componente principale
     │   ├── App.css               # Stili applicazione
     │   ├── types.ts              # Type definitions
@@ -196,6 +201,32 @@ CREATE TABLE contacts (
     CONSTRAINT chk_scale_jp CHECK (scale_jp >= -50 AND scale_jp <= 50)
 );
 
+-- Tabelle per il sistema di relazioni MBTI
+CREATE TABLE mbti_relationship_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    term VARCHAR(50) NOT NULL UNIQUE,
+    color_code CHAR(1) NOT NULL,
+    emoji VARCHAR(10) NOT NULL,
+    description TEXT NOT NULL,
+    compatibility_level INT NOT NULL,
+    CHECK (compatibility_level BETWEEN 1 AND 5)
+);
+
+CREATE TABLE mbti_relationships (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    type_a VARCHAR(4) NOT NULL,
+    type_b VARCHAR(4) NOT NULL,
+    relationship_term VARCHAR(50) NOT NULL,
+    color_code CHAR(1) NOT NULL,
+    emoji VARCHAR(10) NOT NULL,
+    compatibility_level INT NOT NULL,
+    notes TEXT,
+    FOREIGN KEY (type_a) REFERENCES personality_types(code),
+    FOREIGN KEY (type_b) REFERENCES personality_types(code),
+    FOREIGN KEY (relationship_term) REFERENCES mbti_relationship_types(term),
+    UNIQUE KEY uk_types (type_a, type_b)
+);
+
 -- Inserisci i 16 tipi MBTI
 INSERT INTO personality_types (code, name, description) VALUES
 ('INTJ', 'Architetto', 'Pensatori strategici con un piano per tutto'),
@@ -214,7 +245,36 @@ INSERT INTO personality_types (code, name, description) VALUES
 ('ISFP', 'Avventuriero', 'Artisti flessibili e affascinanti'),
 ('ESTP', 'Imprenditore', 'Persone intelligenti, energiche e percettive'),
 ('ESFP', 'Intrattenitore', 'Entertainer spontanei, energici e entusiasti');
+
+-- Inserisci i termini delle relazioni (24 tipi)
+INSERT INTO mbti_relationship_types (term, color_code, emoji, description, compatibility_level) VALUES
+('Gemello', 'V', '🟢', 'Stesso tipo MBTI. Massima comprensione immediata.', 5),
+('Fratello', 'V', '🟢', 'Gruppo cognitivo comune. Forte affinità naturale.', 5),
+('Alleato', 'V', '🟢', 'Funzioni cognitive che si supportano. Buon equilibrio.', 4),
+('Simili', 'B', '🔵', 'Condividono 3 lettere su 4. Visione affine.', 4),
+('Affini', 'B', '🔵', 'Stesso temperamento. Valori e priorità simili.', 4),
+('Complementari', 'B', '🔵', 'Funzioni opposte che si bilanciano idealmente.', 4),
+('Rispetto', 'B', '🔵', 'Ammirano le differenze. Richiede impegno.', 3),
+('Empatici', 'B', '🔵', 'Si incontrano sulla funzione Feeling.', 3),
+('Logici', 'B', '🔵', 'Si incontrano sulla funzione Thinking.', 3),
+('Strategici', 'B', '🔵', 'Visione a lungo termine simile (NJ).', 3),
+('Pragmatici', 'B', '🔵', 'Atteggiamento verso fatti concreti (ST).', 3),
+('Stimolanti', 'G', '🟡', 'Si provocano intellettualmente. Crescita e frustrazione.', 3),
+('Cognitivi', 'G', '🟡', 'Stesse funzioni in ordine diverso.', 3),
+('Energici', 'G', '🟡', 'Condividono energia ma decisioni opposte.', 2),
+('Strutturati', 'G', '🟡', 'Atteggiamento simile verso pianificazione (J).', 2),
+('Efficaci', 'G', '🟡', 'Collaborano per obiettivi comuni.', 2),
+('Diversi', 'R', '🔴', 'Poche funzioni in comune. Richiede sforzo.', 2),
+('Distanti', 'R', '🔴', 'Mondi percettivi lontani.', 2),
+('Sfidante', 'R', '🔴', 'Differenze stimolanti ma frustranti.', 2),
+('Polo opposto', 'R', '🔴', 'Differiscono su 3 lettere.', 2),
+('Mondi diversi', 'R', '🔴', 'Visioni radicalmente differenti.', 1),
+('Tesi', 'R', '🔴', 'Differenze strutturali che creano attrito.', 1),
+('Opposti', 'N', '⚫', 'Opposti su tutte 4 lettere. Massimo potenziale.', 1),
+('Speculari', 'N', '⚫', 'Visione del mondo invertita.', 1);
 ```
+
+**⚠️ IMPORTANTE**: Per popolare la matrice completa 16x16 (256 relazioni), scarica ed esegui il file SQL completo fornito separatamente.
 
 ### 3. Installa le dipendenze del progetto
 
@@ -444,12 +504,21 @@ npm run build
 ### Contacts
 - **GET** `/api/contacts` - Lista tutti i contatti con tipo calcolato
 - **GET** `/api/contacts/:id` - Dettagli singolo contatto
+- **GET** `/api/contacts/:id/affinities` - Affinità del contatto con tutti gli altri
+- **GET** `/api/contacts/relationships` - Matrice completa delle relazioni tra tutti i contatti
 - **POST** `/api/contacts` - Crea nuovo contatto
 - **PUT** `/api/contacts/:id` - Aggiorna contatto
 - **DELETE** `/api/contacts/:id` - Elimina contatto
 
 ### Statistics
 - **GET** `/api/stats` - Statistiche per relazione
+
+### MBTI Relationships
+- **GET** `/api/mbti-relationships/:typeA/:typeB` - Relazione tra due tipi MBTI specifici
+
+### Admin (solo sviluppo)
+- **POST** `/api/admin/populate-relationships` - Popola tabelle relazioni
+- **GET** `/api/admin/relationships-status` - Verifica stato tabelle
 
 ### Esempio richiesta POST
 
@@ -486,6 +555,91 @@ curl -X POST http://localhost:3001/api/contacts \
   "notes": "Persona molto socievole e creativa",
   "created_at": "2025-01-20T10:30:00.000Z",
   "updated_at": "2025-01-20T10:30:00.000Z"
+}
+```
+
+### Esempio GET affinità
+
+```bash
+curl http://localhost:3001/api/contacts/1/affinities
+```
+
+**Response:**
+```json
+[
+  {
+    "contact_id": 2,
+    "name": "Laura",
+    "surname": "Bianchi",
+    "personality_type": "INFJ",
+    "relationship_term": "Complementari",
+    "emoji": "🔵",
+    "color_code": "B",
+    "compatibility_level": 4,
+    "description": "Funzioni opposte che si bilanciano idealmente"
+  },
+  {
+    "contact_id": 3,
+    "name": "Paolo",
+    "surname": "Verdi",
+    "personality_type": "ISTJ",
+    "relationship_term": "Sfidante",
+    "emoji": "🔴",
+    "color_code": "R",
+    "compatibility_level": 2,
+    "description": "Differenze stimolanti ma frustranti"
+  }
+]
+```
+
+### Esempio GET matrice relazioni
+
+```bash
+curl http://localhost:3001/api/contacts/relationships
+```
+
+**Response:**
+```json
+{
+  "contacts": [
+    {
+      "id": 1,
+      "name": "Mario Rossi",
+      "type": "ENTP"
+    },
+    {
+      "id": 2,
+      "name": "Laura Bianchi",
+      "type": "INFJ"
+    }
+  ],
+  "relationships": [
+    {
+      "contact1": {
+        "id": 1,
+        "name": "Mario Rossi",
+        "type": "ENTP"
+      },
+      "contact2": {
+        "id": 2,
+        "name": "Laura Bianchi",
+        "type": "INFJ"
+      },
+      "relationship": "Complementari",
+      "emoji": "🔵",
+      "colorCode": "B",
+      "compatibility": 4,
+      "description": "Funzioni opposte che si bilanciano idealmente",
+      "compatibilityText": "Alta compatibilità"
+    }
+  ],
+  "compatibilityLevels": [
+    { "level": 5, "label": "Alta", "color": "green" },
+    { "level": 4, "label": "Media-Alta", "color": "blue" },
+    { "level": 3, "label": "Media", "color": "yellow" },
+    { "level": 2, "label": "Bassa", "color": "orange" },
+    { "level": 1, "label": "Molto Bassa", "color": "red" }
+  ]
 }
 ```
 
@@ -610,6 +764,46 @@ L'endpoint `/api/stats` restituisce statistiche aggregate per **relazione**:
 }
 ```
 
+## 🔗 Sistema di Affinità e Matrice delle Relazioni
+
+### Pannello Affinità Singolo Contatto
+
+Ogni contatto ha un pulsante **"🔗 Affinità"** che mostra:
+- Tutte le relazioni con gli altri contatti
+- Ordinamento per compatibilità (alta → bassa)
+- Emoji e colori per identificare rapidamente il tipo di relazione
+- Descrizioni dettagliate di ogni relazione
+
+**Livelli di Compatibilità:**
+- 🟢 **5**: Gemello, Fratello - Eccellente comprensione
+- 🟢 **4**: Alleato, Simili, Affini - Molto buona
+- 🔵 **3**: Complementari, Rispetto, Logici, Empatici - Buona
+- 🟡 **2**: Stimolanti, Energici, Diversi - Media
+- 🔴 **1**: Opposti, Speculari, Mondi diversi - Sfidante
+
+### Matrice delle Relazioni
+
+Componente dedicato che visualizza tutte le relazioni in due modalità:
+
+#### 🔲 Vista Matrice
+- Matrice 2D completa (stile tabella)
+- Riga per ogni contatto, colonna per ogni altro contatto
+- Colori e emoji per identificare immediatamente le relazioni
+- Header fisso e scroll orizzontale/verticale
+- Hover per dettagli completi
+
+#### 📋 Vista Lista
+- Card per ogni coppia di contatti
+- Ordinamento per compatibilità
+- Filtro per contatto specifico
+- Visualizzazione dettagliata di nome, tipo e descrizione relazione
+
+**Controlli:**
+- Toggle vista Matrice/Lista
+- Ordinamento per Nome o Tipo MBTI
+- Filtro per contatto specifico
+- Legenda compatibilità sempre visibile
+
 ## 🐛 Troubleshooting
 
 ### Il backend non parte
@@ -624,6 +818,34 @@ brew services list
 # Testa la connessione al database
 mysql -u root -p -e "USE personality_app; SELECT COUNT(*) FROM contacts;"
 ```
+
+### Errore 404 su `/api/contacts/relationships`
+
+**Causa:** Ordine errato delle route in Express
+
+**Soluzione:** Assicurati che `/api/contacts/relationships` sia definita **PRIMA** di `/api/contacts/:id` nel server.ts
+
+### Matrice relazioni vuota o errore
+
+```bash
+# Verifica che le tabelle siano popolate
+mysql -u root -p personality_app
+
+# Conta relazioni (dovrebbero essere 256)
+SELECT COUNT(*) FROM mbti_relationships;
+
+# Se 0, esegui lo script di popolamento
+SOURCE database_relationships_complete.sql;
+```
+
+### Colonna sinistra della matrice orizzontale
+
+**Causa:** Struttura grid CSS errata
+
+**Soluzione:** Assicurati che:
+1. `RelationshipMatrix.css` usi `data-cols` attribute
+2. Tutte le celle siano figli diretti del grid (nessun wrapper `.matrix-row`)
+3. CSS abbia le regole `grid-template-columns` corrette
 
 ### Errori di compilazione TypeScript
 
@@ -650,6 +872,22 @@ npm run dev
 
 ```bash
 chmod 644 ~/Library/LaunchAgents/com.personalityapp.backend.plist
+```
+
+### Affinità non visualizzate
+
+**Causa:** Contatti senza tipo MBTI o tabelle relazioni vuote
+
+**Soluzione:**
+```sql
+-- Verifica contatti con tipo
+SELECT c.id, c.name, pt.code 
+FROM contacts c 
+LEFT JOIN personality_types pt ON c.personality_type_id = pt.id;
+
+-- Verifica popolamento relazioni
+SELECT COUNT(*) FROM mbti_relationship_types;
+SELECT COUNT(*) FROM mbti_relationships;
 ```
 
 ## 📦 Script npm disponibili
@@ -694,15 +932,29 @@ Questo è un progetto personale, ma se hai suggerimenti:
 4. Push al branch (`git push origin feature/AmazingFeature`)
 5. Apri una Pull Request
 
+## 🚀 Funzionalità Future
+
+- [ ] Export dati in CSV/Excel
+- [ ] Grafici di rete delle relazioni
+- [ ] Suggerimenti composizione gruppi ottimali
+- [ ] Notifiche per nuove affinità
+- [ ] Analisi dinamiche di gruppo
+- [ ] Report PDF delle relazioni
+- [ ] Storico modifiche dei contatti
+- [ ] Backup automatico database
+- [ ] Ricerca full-text nei contatti
+- [ ] Tag personalizzati per contatti
+
 ## 📞 Supporto
 
 Per problemi o domande:
 - Controlla la sezione [Troubleshooting](#troubleshooting)
 - Consulta la guida [GUIDA_IMPLEMENTAZIONE_SLIDER.md](GUIDA_IMPLEMENTAZIONE_SLIDER.md)
+- Consulta la guida [GUIDA_AFFINITA_MBTI.md](GUIDA_AFFINITA_MBTI.md)
 - Apri una issue su GitHub
 
 ---
 
 **Creato con ❤️ per organizzare i tuoi contatti secondo i tipi di personalità MBTI**
 
-*Versione 1.0.0 - TypeScript Edition*
+*Versione 2.0.0 - TypeScript Edition con Sistema Completo di Relazioni*

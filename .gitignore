@@ -34,3 +34,4 @@ frontend/dist/
 # Testing
 coverage/
 .nyc_output/
+backend/dist/server.js
