@@ -19,8 +19,11 @@
             "request": "launch",
             "name": "Run FrontEnd",
             "command": "cd ${workspaceFolder}/frontend && npm run dev"
-
-            
+        },{
+            "type": "node-terminal",
+            "request": "launch",
+            "name": "Close port 3000 / 3001",
+            "command": "lsof -ti:3000 | xargs kill -9; lsof -ti:3001 | xargs kill -9"
         }
     ]
 }
